@@ -30,10 +30,7 @@ public class KafkaDemoApplication {
 		MessageListener listener = context.getBean(MessageListener.class);
         for (int i = 0; i < 10; i++) {
 			producer.sendMessage("Hello, Spring Kafka! " + i);
-			listener.latch.await(10000, TimeUnit.MILLISECONDS);
 		}
-
-		context.close();
 	}
 
 
@@ -64,13 +61,13 @@ public class KafkaDemoApplication {
 	public static class MessageListener {
 
 
-		public final CountDownLatch latch = new CountDownLatch(3);
+		// public final CountDownLatch latch = new CountDownLatch(3);
 
 		@KafkaListener(topics = "${spring.kafka.topic-name}", groupId = "${spring.kafka.consumer.group-id}")
 		public void listen(String message) {
 			System.out.println("Received Messasge in group : " + message);
 
-			latch.countDown();
+			//latch.countDown();
 		}
 	}
 
