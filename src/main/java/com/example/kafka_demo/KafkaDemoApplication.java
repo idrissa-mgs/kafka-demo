@@ -1,84 +1,77 @@
 package com.example.kafka_demo;
 
-import org.apache.kafka.clients.admin.AdminClientConfig;
-import org.apache.kafka.clients.admin.NewTopic;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.producer.ProducerConfig;
-import org.apache.kafka.common.serialization.StringDeserializer;
-import org.apache.kafka.common.serialization.StringSerializer;
-import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.context.annotation.Bean;
 import org.springframework.kafka.annotation.KafkaListener;
-import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
-import org.springframework.kafka.config.TopicBuilder;
-import org.springframework.kafka.core.*;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.context.annotation.Bean;
+import org.springframework.kafka.core.KafkaTemplate;
 
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 @SpringBootApplication
 public class KafkaDemoApplication {
 
-	public static void main(String[] args) {
-		SpringApplication.run(KafkaDemoApplication.class, args);
+
+
+	public static void main(String[] args) throws InterruptedException {
+
+		ConfigurableApplicationContext context = SpringApplication.run(KafkaDemoApplication.class, args);
+	//	SpringApplication.run(KafkaDemoApplication.class, args);
+
+
+		MessageProducer producer = context.getBean(MessageProducer.class);
+		MessageListener listener = context.getBean(MessageListener.class);
+        for (int i = 0; i < 10; i++) {
+			producer.sendMessage("Hello, Spring Kafka! " + i);
+			listener.latch.await(10000, TimeUnit.MILLISECONDS);
+		}
+
+		context.close();
+	}
+
+
+	@Bean
+	public MessageProducer messageProducer() {
+		return new MessageProducer();
 	}
 
 	@Bean
-	public KafkaAdmin kafkaAdmin() {
-		Map<String, Object> configs = new HashMap<>();
-		configs.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
-		return new KafkaAdmin(configs);
+	public MessageListener messageListener() {
+		return new MessageListener();
 	}
 
-	@Bean
-	public NewTopic topic() {
-		return TopicBuilder.name("user-topic")
-				.partitions(10)
-				.replicas(1)
-				.build();
+	public static class MessageProducer {
+
+		@Value(value = "${spring.kafka.topic-name}")
+		private String topicName;
+
+		@Autowired
+		private KafkaTemplate<String, String> kafkaTemplate;
+
+		public void sendMessage(String msg) {
+			System.out.println("Producing message -> " +  msg);
+			kafkaTemplate.send(topicName, msg);
+		}
 	}
 
-	@Bean
-	public ProducerFactory<String, String> producerFactory() {
-		Map<String, Object> configProps = new HashMap<>();
-		configProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
-		configProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-		configProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-		return new DefaultKafkaProducerFactory<>(configProps);
+	public static class MessageListener {
+
+
+		public final CountDownLatch latch = new CountDownLatch(3);
+
+		@KafkaListener(topics = "${spring.kafka.topic-name}", groupId = "${spring.kafka.consumer.group-id}")
+		public void listen(String message) {
+			System.out.println("Received Messasge in group : " + message);
+
+			latch.countDown();
+		}
 	}
 
-	@Bean
-	public KafkaTemplate<String, String> kafkaTemplate() {
-		return new KafkaTemplate<>(producerFactory());
-	}
-
-	@Bean
-	public ConsumerFactory<String, String> consumerFactory() {
-		Map<String, Object> configProps = new HashMap<>();
-		configProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
-		configProps.put(ConsumerConfig.GROUP_ID_CONFIG, "group_id");
-		configProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
-		configProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
-		return new DefaultKafkaConsumerFactory<>(configProps);
-	}
-
-	@Bean
-	public ConcurrentKafkaListenerContainerFactory<String, String> kafkaListenerContainerFactory() {
-		ConcurrentKafkaListenerContainerFactory<String, String> factory = new ConcurrentKafkaListenerContainerFactory<>();
-		factory.setConsumerFactory(consumerFactory());
-		return factory;
-	}
-
-	@KafkaListener(id = "myId", topics = "user-topic", groupId = "group_id")
-	public void listen(String message) {
-		System.out.println("New message received: " + message);
-	}
-
-	@Bean
-	public ApplicationRunner runner(KafkaTemplate<String, String> template) {
-		return args -> template.send("user-topic", "test");
-	}
 }
